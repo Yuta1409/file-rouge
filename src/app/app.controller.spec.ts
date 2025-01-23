@@ -18,4 +18,12 @@ describe('AppController', () => {
       expect(appController.getData()).toEqual({message: 'Hello API'});
     });
   });
+
+  describe('ping', () => {
+    it('should return status 200 and {status: "OK"}', async () => {
+      const appController = app.get<AppController>(AppController);
+      const response = appController.ping();
+      expect(response).toEqual({ status: 'OK' });
+    });
+  });
 });
