@@ -2,10 +2,10 @@ import axios from 'axios';
 describe('POST /api/users', () => {
   it('should return 201 if user is authenticated', async () => {
     const auth = await axios.post(
-      'https://www.googleapis.com/identitytoolkit/v3/relyingparty/verifyPassword?key=AIzaSyDIBKcmYN8CkFIQ4zWZpBmI1N3piflfqqM',
+      `https://www.googleapis.com/identitytoolkit/v3/relyingparty/verifyPassword?key=${process.env.FIREBASE_API_KEY}`,
       {
-        email: 'fhemery@hemit.fr',
-        password: 'Test123!',
+        email: 'test@gmail.com',
+        password: '12345678',
         returnSecureToken: true,
       }
     );

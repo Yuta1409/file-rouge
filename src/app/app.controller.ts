@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req } from '@nestjs/common';
 import { FirebaseAdmin, InjectFirebaseAdmin } from 'nestjs-firebase';
 import { AppService } from './app.service';
-import * as bcrypt from 'bcrypt';
+import { Request } from 'express';
 
 @Controller()
 export class AppController {
@@ -35,43 +35,48 @@ export class AppController {
   }
 
   @Post('users')
-  async addUser(
-    @Body() user: { name: string; email: string; password: string }
-  ) {
+  async addUser(@Body() user: { username: string }, @Req() request: Request) {
     try {
       // Validation et nettoyage des données
-      if (!user.name || !user.email || !user.password) {
+      const token = this.extractTokenFromHeader(request);
+
+      if (!token) {
         return {
           status: 'KO',
-          details: { error: 'Tous les champs sont obligatoires' }
+          details: { error: 'Token d\'authentification manquant' },
         };
       }
 
-      // Nettoyage des chaînes de caractères
-      const sanitizedUser = {
-        name: user.name.trim(),
-        email: user.email.trim().toLowerCase(),
-        password: user.password
-      };
+      // Décodage du token JWT
+      try {
+        const decodedToken = await this.fa.auth.verifyIdToken(token);
+        const uid = decodedToken.uid;
+        
+        // Validation du username
+        if (!user.username) {
+          return {
+            status: 'KO',
+            details: { error: 'Le champ username est obligatoire' },
+          };
+        }
 
-      // Vérification du format email
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(sanitizedUser.email)) {
+        // Ajout de l'utilisateur avec son UID Firebase
+        await this.fa.firestore.collection('Users').add({
+          username: user.username,
+          uid: uid,
+          createdAt: new Date(),
+        });
+
+        return {
+          status: 'OK',
+        };
+      } catch (tokenError) {
+        console.error(tokenError);
         return {
           status: 'KO',
-          details: { error: 'Format email invalide' }
+          details: { error: 'Token invalide' },
         };
       }
-
-      await this.fa.firestore.collection('Users').add({
-        name: sanitizedUser.name,
-        email: sanitizedUser.email,
-        password: bcrypt.hashSync(sanitizedUser.password, 10),
-      });
-
-      return {
-        status: 'OK',
-      };
     } catch (error) {
       console.error(error);
       return {
@@ -80,4 +85,6 @@ export class AppController {
       };
     }
   }
+
+  private extractTokenFromHeader(request: Request): string | undefined { const [type, token] = request.headers.authorization?.split(' ') ?? []; return type === 'Bearer' ? token : undefined; }
 }
