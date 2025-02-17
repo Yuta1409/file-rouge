@@ -6,17 +6,15 @@ import {
   Body,
   Post,
 } from '@nestjs/common';
+import { FirebaseAdmin, InjectFirebaseAdmin } from 'nestjs-firebase';
 import { AppService } from './app.service';
-import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, getDocs, addDoc } from 'firebase/firestore';
 import * as dotenv from 'dotenv';
 import * as bcrypt from 'bcrypt';
 dotenv.config();
 
 @Controller()
 export class AppController {
-  constructor(private readonly appService: AppService) {}
-
+  constructor( private readonly appService: AppService, @InjectFirebaseAdmin() private readonly fa: FirebaseAdmin ) {}
   @Get()
   getData() {
     return this.appService.getData();
@@ -25,11 +23,11 @@ export class AppController {
   @Get('ping')
   async ping() {
     try {
-      const db = this.appService.getFirestore();
-
       // Tester la connexion en essayant de lire une collection
       try {
-        await getDocs(collection(db, 'Users'));
+        const usersCollection = this.fa.firestore.collection('users');
+        const users = (await usersCollection.get()).docs;
+        console.log(users)
         return {
           status: 'OK',
           details: { database: 'OK' },
@@ -51,32 +49,32 @@ export class AppController {
     }
   }
 
-  @Post('users')
-  async addUser(
-    @Body() user: { name: string; email: string; password: string }
-  ) {
-    try {
-      const db = this.appService.getFirestore();
+//   @Post('users')
+//   async addUser(
+//     @Body() user: { name: string; email: string; password: string }
+//   ) {
+//     try {
+//       const db = this.appService.getFirestore();
 
-      // Insertion d'un utilisateur dans la collection "Users"
-      await addDoc(collection(db, 'Users'), {
-        name: user.name,
-        email: user.email,
-        password: bcrypt.hashSync(user.password, 10),
-      });
+//       // Insertion d'un utilisateur dans la collection "Users"
+//       await addDoc(collection(db, 'Users'), {
+//         name: user.name,
+//         email: user.email,
+//         password: bcrypt.hashSync(user.password, 10),
+//       });
 
-      return {
-        status: 'OK',
-      };
-    } catch (error) {
-      console.error(error);
-      throw new HttpException(
-        {
-          status: 'KO',
-          details: { error: "Erreur lors de l'ajout de l'utilisateur" },
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR
-      );
-    }
-  }
+//       return {
+//         status: 'OK',
+//       };
+//     } catch (error) {
+//       console.error(error);
+//       throw new HttpException(
+//         {
+//           status: 'KO',
+//           details: { error: "Erreur lors de l'ajout de l'utilisateur" },
+//         },
+//         HttpStatus.INTERNAL_SERVER_ERROR
+//       );
+//     }
+//   }
 }
