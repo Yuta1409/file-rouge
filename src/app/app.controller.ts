@@ -1,21 +1,14 @@
-import {
-  Controller,
-  Get,
-  HttpStatus,
-  HttpException,
-  Body,
-  Post,
-} from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
+import { FirebaseAdmin, InjectFirebaseAdmin } from 'nestjs-firebase';
 import { AppService } from './app.service';
-import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, getDocs, addDoc } from 'firebase/firestore';
-import * as dotenv from 'dotenv';
 import * as bcrypt from 'bcrypt';
-dotenv.config();
 
 @Controller()
 export class AppController {
-  constructor(private readonly appService: AppService) {}
+  constructor(
+    private readonly appService: AppService,
+    @InjectFirebaseAdmin() private readonly fa: FirebaseAdmin
+  ) {}
 
   @Get()
   getData() {
@@ -25,29 +18,19 @@ export class AppController {
   @Get('ping')
   async ping() {
     try {
-      const db = this.appService.getFirestore();
+      const usersCollection = this.fa.firestore.collection('Users');
+      await usersCollection.get();
 
-      // Tester la connexion en essayant de lire une collection
-      try {
-        await getDocs(collection(db, 'Users'));
-        return {
-          status: 'OK',
-          details: { database: 'OK' },
-        };
-      } catch (dbError) {
-        return {
-          status: 'Partial',
-          details: { database: 'KO' },
-        };
-      }
+      return {
+        status: 'OK',
+        details: { database: 'OK' },
+      };
     } catch (error) {
-      throw new HttpException(
-        {
-          status: 'KO',
-          details: { database: 'KO' },
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR
-      );
+      console.error(error);
+      return {
+        status: 'Partial',
+        details: { database: 'KO' },
+      };
     }
   }
 
@@ -56,13 +39,34 @@ export class AppController {
     @Body() user: { name: string; email: string; password: string }
   ) {
     try {
-      const db = this.appService.getFirestore();
+      // Validation et nettoyage des données
+      if (!user.name || !user.email || !user.password) {
+        return {
+          status: 'KO',
+          details: { error: 'Tous les champs sont obligatoires' }
+        };
+      }
 
-      // Insertion d'un utilisateur dans la collection "Users"
-      await addDoc(collection(db, 'Users'), {
-        name: user.name,
-        email: user.email,
-        password: bcrypt.hashSync(user.password, 10),
+      // Nettoyage des chaînes de caractères
+      const sanitizedUser = {
+        name: user.name.trim(),
+        email: user.email.trim().toLowerCase(),
+        password: user.password
+      };
+
+      // Vérification du format email
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(sanitizedUser.email)) {
+        return {
+          status: 'KO',
+          details: { error: 'Format email invalide' }
+        };
+      }
+
+      await this.fa.firestore.collection('Users').add({
+        name: sanitizedUser.name,
+        email: sanitizedUser.email,
+        password: bcrypt.hashSync(sanitizedUser.password, 10),
       });
 
       return {
@@ -70,13 +74,10 @@ export class AppController {
       };
     } catch (error) {
       console.error(error);
-      throw new HttpException(
-        {
-          status: 'KO',
-          details: { error: "Erreur lors de l'ajout de l'utilisateur" },
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR
-      );
+      return {
+        status: 'KO',
+        details: { error: "Erreur lors de l'ajout de l'utilisateur" },
+      };
     }
   }
 }
