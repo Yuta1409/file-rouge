@@ -42,3 +42,4 @@ Thumbs.db
 .nx/workspace-data
 
 .env
+src/assets/chat-quizzy-firebase-key.template.json
