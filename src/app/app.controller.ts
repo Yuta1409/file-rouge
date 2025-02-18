@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Res, HttpCode, Header } from '@nestjs/common';
 import {
   ConflictException,
   BadRequestException,
@@ -9,7 +9,7 @@ import {
 
 import { FirebaseAdmin, InjectFirebaseAdmin } from 'nestjs-firebase';
 import { AppService } from './app.service';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { AuthService } from './modules/auth/auth.service';
 @Controller()
 export class AppController {
@@ -112,6 +112,72 @@ export class AppController {
         throw error;
       }
       throw new InternalServerErrorException('Erreur serveur');
+    }
+  }
+
+  @Get('quiz')
+  async getUserQuizzes(@Req() request: Request) {
+    try {
+      // Vérification de l'authentification
+      const { uid } = await this.authService.verifyToken(request);
+      // Récupération des quiz de l'utilisateur
+      const quizzesSnapshot = await this.fa.firestore
+        .collection('Quizz')
+        .where('userId', '==', uid)
+        .get();
+
+      const quizzes = quizzesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        title: doc.data().title
+      }));
+
+      return {
+        status: 200,
+        data: quizzes
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Erreur lors de la récupération des quiz'
+      );
+    }
+  }
+
+  @Post('quiz')
+  @HttpCode(201)
+  @Header('Location', '')
+  async createQuiz(
+    @Body() quizData: { title: string; description: string },
+    @Req() request: Request,
+    @Res() response: Response
+  ) {
+    try {
+      const { uid } = await this.authService.verifyToken(request);
+
+      if (!quizData.title) {
+        throw new BadRequestException('Le titre est obligatoire');
+      }
+
+      const quizRef = await this.fa.firestore.collection('Quizz').add({
+        title: quizData.title,
+        description: quizData.description,
+        userId: uid,
+        createdAt: new Date()
+      });
+
+      response
+        .location(`${request.protocol}://${request.get('host')}/quiz/${quizRef.id}`)
+        .status(201)
+        .send();
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Erreur lors de la création du quiz'
+      );
     }
   }
 }
