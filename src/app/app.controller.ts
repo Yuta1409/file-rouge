@@ -6,8 +6,8 @@ import {
   Req,
   Res,
   HttpCode,
-  Header,
   Param,
+  Patch,
 } from '@nestjs/common';
 import {
   ConflictException,
@@ -184,10 +184,8 @@ export class AppController {
       response
         .setHeader('Location', locationUrl)
         .status(201)
-        .json({
-          id: quizRef.id,
-          status: 'created'
-        });
+        .send();
+
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
@@ -223,6 +221,45 @@ export class AppController {
       }
       throw new InternalServerErrorException(
         'Erreur lors de la récupération du quiz'
+      );
+    }
+  }
+
+  @Patch('quiz/:id')
+  @HttpCode(204)
+  async updateQuiz(
+    @Param('id') quizId: string,
+    @Body() operations: Array<{ op: string; path: string; value: string }>,
+    @Req() request: Request
+  ) {
+    try {
+      const { uid } = await this.authService.verifyToken(request);
+      
+      const quizDoc = await this.fa.firestore
+        .collection('Quizz')
+        .doc(quizId)
+        .get();
+
+      if (!quizDoc.exists || quizDoc.data().userId !== uid) {
+        throw new NotFoundException('Quiz non trouvé');
+      }
+
+      const operation = operations[0];
+      if (operation.op !== 'replace' || operation.path !== '/title') {
+        throw new BadRequestException('Opération non valide');
+      }
+
+      await this.fa.firestore
+        .collection('Quizz')
+        .doc(quizId)
+        .update({ title: operation.value });
+
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Erreur lors de la mise à jour du quiz'
       );
     }
   }

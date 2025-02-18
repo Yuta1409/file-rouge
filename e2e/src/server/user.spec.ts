@@ -31,3 +31,59 @@ describe('POST /api/users', () => {
     }
   });
 });
+
+describe('GET /api/users/me', () => {
+  let authToken: string;
+
+  beforeAll(async () => {
+    // Authentification avant les tests
+    const auth = await axios.post(
+      `https://www.googleapis.com/identitytoolkit/v3/relyingparty/verifyPassword?key=${process.env.FIREBASE_API_KEY}`,
+      {
+        email: 'test@gmail.com',
+        password: '12345678',
+        returnSecureToken: true,
+      }
+    );
+    authToken = auth.data.idToken;
+  });
+
+  it('devrait retourner les informations de l\'utilisateur connecté', async () => {
+    const response = await axios.get('/api/users/me', {
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.data).toHaveProperty('uid');
+    expect(response.data).toHaveProperty('email');
+    expect(response.data).toHaveProperty('username');
+  });
+
+  it('devrait retourner 401 si l\'utilisateur n\'est pas authentifié', async () => {
+    try {
+      await axios.get('/api/users/me');
+      fail('La requête aurait dû échouer');
+    } catch (error) {
+      expect(error.response.status).toBe(401);
+    }
+  });
+
+  it('devrait retourner 404 si l\'utilisateur n\'existe pas dans la base', async () => {
+    // Simuler un token valide mais pour un utilisateur non existant
+    const nonExistentUserToken = 'token_valide_mais_utilisateur_inexistant';
+    
+    try {
+      await axios.get('/api/users/me', {
+        headers: {
+          Authorization: `Bearer ${nonExistentUserToken}`,
+        },
+      });
+      fail('La requête aurait dû échouer');
+    } catch (error) {
+      expect(error.response.status).toBe(404);
+      expect(error.response.data.message).toBe('Utilisateur non trouvé');
+    }
+  });
+});
