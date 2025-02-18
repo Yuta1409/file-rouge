@@ -160,7 +160,6 @@ export class AppController {
 
   @Post('quiz')
   @HttpCode(201)
-  @Header('Access-Control-Expose-Headers', 'Location')
   async createQuiz(
     @Body() quizData: { title: string; description: string },
     @Req() request: Request,
@@ -177,22 +176,18 @@ export class AppController {
         title: quizData.title,
         description: quizData.description,
         userId: uid,
-        createdAt: new Date(),
+        createdAt: new Date()
       });
 
       const locationUrl = `${request.protocol}://${request.get('host')}/api/quiz/${quizRef.id}`;
       
-      response.setHeader('Location', locationUrl);
-      response.setHeader('Access-Control-Expose-Headers', 'Location');
-      
-      return response.status(201).json({
-        status: 201,
-        data: {
+      response
+        .setHeader('Location', locationUrl)
+        .status(201)
+        .json({
           id: quizRef.id,
-          title: quizData.title,
-          description: quizData.description,
-        },
-      });
+          status: 'created'
+        });
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
