@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Post, Req, Res, HttpCode, Header } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Req,
+  Res,
+  HttpCode,
+  Header,
+  Param,
+} from '@nestjs/common';
 import {
   ConflictException,
   BadRequestException,
@@ -126,14 +136,17 @@ export class AppController {
         .where('userId', '==', uid)
         .get();
 
-      const quizzes = quizzesSnapshot.docs.map(doc => ({
+      const quizzes = quizzesSnapshot.docs.map((doc) => ({
         id: doc.id,
-        title: doc.data().title
+        title: doc.data().title,
       }));
 
       return {
         status: 200,
-        data: quizzes
+        data: quizzes,
+        _links: {
+          create: `${request.protocol}://${request.get('host')}/api/quiz`,
+        },
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -147,7 +160,7 @@ export class AppController {
 
   @Post('quiz')
   @HttpCode(201)
-  @Header('Location', '')
+  @Header('Access-Control-Expose-Headers', 'Location')
   async createQuiz(
     @Body() quizData: { title: string; description: string },
     @Req() request: Request,
@@ -164,19 +177,57 @@ export class AppController {
         title: quizData.title,
         description: quizData.description,
         userId: uid,
-        createdAt: new Date()
+        createdAt: new Date(),
       });
 
-      response
-        .location(`${request.protocol}://${request.get('host')}/quiz/${quizRef.id}`)
-        .status(201)
-        .send();
+      const locationUrl = `${request.protocol}://${request.get('host')}/api/quiz/${quizRef.id}`;
+      
+      response.setHeader('Location', locationUrl);
+      response.setHeader('Access-Control-Expose-Headers', 'Location');
+      
+      return response.status(201).json({
+        status: 201,
+        data: {
+          id: quizRef.id,
+          title: quizData.title,
+          description: quizData.description,
+        },
+      });
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
       }
       throw new InternalServerErrorException(
         'Erreur lors de la création du quiz'
+      );
+    }
+  }
+
+  @Get('quiz/:id')
+  async getQuizById(@Req() request: Request, @Param('id') quizId: string) {
+    try {
+      const { uid } = await this.authService.verifyToken(request);
+      const quizDoc = await this.fa.firestore
+        .collection('Quizz')
+        .doc(quizId)
+        .get();
+
+      if (!quizDoc.exists || quizDoc.data().userId !== uid) {
+        throw new NotFoundException('Quiz non trouvé');
+      }
+
+      const quizData = quizDoc.data();
+      return {
+        title: quizData.title,
+        description: quizData.description,
+        questions: quizData.questions || [],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Erreur lors de la récupération du quiz'
       );
     }
   }
