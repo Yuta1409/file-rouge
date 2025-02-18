@@ -1,13 +1,22 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req } from '@nestjs/common';
+import {
+  ConflictException,
+  BadRequestException,
+  InternalServerErrorException,
+  NotFoundException,
+  HttpException,
+} from '@nestjs/common';
+
 import { FirebaseAdmin, InjectFirebaseAdmin } from 'nestjs-firebase';
 import { AppService } from './app.service';
-import * as bcrypt from 'bcrypt';
-
+import { Request } from 'express';
+import { AuthService } from './modules/auth/auth.service';
 @Controller()
 export class AppController {
   constructor(
     private readonly appService: AppService,
-    @InjectFirebaseAdmin() private readonly fa: FirebaseAdmin
+    @InjectFirebaseAdmin() private readonly fa: FirebaseAdmin,
+    private readonly authService: AuthService
   ) {}
 
   @Get()
@@ -35,49 +44,74 @@ export class AppController {
   }
 
   @Post('users')
-  async addUser(
-    @Body() user: { name: string; email: string; password: string }
-  ) {
+  async addUser(@Body() user: { username: string }, @Req() request: Request) {
     try {
-      // Validation et nettoyage des données
-      if (!user.name || !user.email || !user.password) {
-        return {
-          status: 'KO',
-          details: { error: 'Tous les champs sont obligatoires' }
-        };
+      const { uid, email } = await this.authService.verifyToken(request);
+
+      const existingUserSnapshot = await this.fa.firestore
+        .collection('Users')
+        .where('email', '==', email)
+        .get();
+
+      if (!existingUserSnapshot.empty) {
+        throw new ConflictException(
+          'Un utilisateur avec cet email existe déjà'
+        );
       }
 
-      // Nettoyage des chaînes de caractères
-      const sanitizedUser = {
-        name: user.name.trim(),
-        email: user.email.trim().toLowerCase(),
-        password: user.password
-      };
-
-      // Vérification du format email
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(sanitizedUser.email)) {
-        return {
-          status: 'KO',
-          details: { error: 'Format email invalide' }
-        };
+      if (!user.username) {
+        throw new BadRequestException('Le champ username est obligatoire');
       }
 
       await this.fa.firestore.collection('Users').add({
-        name: sanitizedUser.name,
-        email: sanitizedUser.email,
-        password: bcrypt.hashSync(sanitizedUser.password, 10),
+        username: user.username,
+        uid: uid,
+        email: email,
+        createdAt: new Date(),
       });
 
       return {
         status: 'OK',
       };
     } catch (error) {
-      console.error(error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        "Erreur lors de l'ajout de l'utilisateur"
+      );
+    }
+  }
+
+  @Get('users/me')
+  async getCurrentUser(@Req() request: Request) {
+    try {
+      const { uid, email } = await this.authService.verifyToken(request);
+
+      const userDoc = (
+        await this.fa.firestore
+          .collection('Users')
+          .where('uid', '==', uid)
+          .limit(1)
+          .get()
+      ).docs[0];
+
+      if (!userDoc) {
+        throw new NotFoundException('Utilisateur non trouvé');
+      }
+
+      const userData = userDoc.data();
+
       return {
-        status: 'KO',
-        details: { error: "Erreur lors de l'ajout de l'utilisateur" },
+        uid,
+        email,
+        username: userData.username,
       };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Erreur serveur');
     }
   }
 }
