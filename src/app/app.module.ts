@@ -13,6 +13,7 @@ import { PingModule } from './ping/ping.module';
 import { UsersController } from './users/users.controller';
 import { AuthModule } from './modules/auth/auth.module';
 import { AuthMiddleware } from './modules/auth/auth.middleware';
+import { AuthService } from './modules/auth/auth.service';
 
 @Module({
   imports: [
@@ -23,7 +24,7 @@ import { AuthMiddleware } from './modules/auth/auth.middleware';
     AuthModule,
   ],
   controllers: [AppController, PingController, UsersController],
-  providers: [AppService],
+  providers: [AppService, AuthService],
 })
 export class AppModule implements NestModule {
   public configure(consumer: MiddlewareConsumer) {

@@ -1,13 +1,22 @@
 import { Body, Controller, Get, Post, Req } from '@nestjs/common';
+import {
+  ConflictException,
+  BadRequestException,
+  InternalServerErrorException,
+  NotFoundException,
+  HttpException,
+} from '@nestjs/common';
+
 import { FirebaseAdmin, InjectFirebaseAdmin } from 'nestjs-firebase';
 import { AppService } from './app.service';
 import { Request } from 'express';
-
+import { AuthService } from './modules/auth/auth.service';
 @Controller()
 export class AppController {
   constructor(
     private readonly appService: AppService,
-    @InjectFirebaseAdmin() private readonly fa: FirebaseAdmin
+    @InjectFirebaseAdmin() private readonly fa: FirebaseAdmin,
+    private readonly authService: AuthService
   ) {}
 
   @Get()
@@ -37,54 +46,72 @@ export class AppController {
   @Post('users')
   async addUser(@Body() user: { username: string }, @Req() request: Request) {
     try {
-      // Validation et nettoyage des données
-      const token = this.extractTokenFromHeader(request);
+      const { uid, email } = await this.authService.verifyToken(request);
 
-      if (!token) {
-        return {
-          status: 'KO',
-          details: { error: 'Token d\'authentification manquant' },
-        };
+      const existingUserSnapshot = await this.fa.firestore
+        .collection('Users')
+        .where('email', '==', email)
+        .get();
+
+      if (!existingUserSnapshot.empty) {
+        throw new ConflictException(
+          'Un utilisateur avec cet email existe déjà'
+        );
       }
 
-      // Décodage du token JWT
-      try {
-        const decodedToken = await this.fa.auth.verifyIdToken(token);
-        const uid = decodedToken.uid;
-        
-        // Validation du username
-        if (!user.username) {
-          return {
-            status: 'KO',
-            details: { error: 'Le champ username est obligatoire' },
-          };
-        }
-
-        // Ajout de l'utilisateur avec son UID Firebase
-        await this.fa.firestore.collection('Users').add({
-          username: user.username,
-          uid: uid,
-          createdAt: new Date(),
-        });
-
-        return {
-          status: 'OK',
-        };
-      } catch (tokenError) {
-        console.error(tokenError);
-        return {
-          status: 'KO',
-          details: { error: 'Token invalide' },
-        };
+      if (!user.username) {
+        throw new BadRequestException('Le champ username est obligatoire');
       }
-    } catch (error) {
-      console.error(error);
+
+      await this.fa.firestore.collection('Users').add({
+        username: user.username,
+        uid: uid,
+        email: email,
+        createdAt: new Date(),
+      });
+
       return {
-        status: 'KO',
-        details: { error: "Erreur lors de l'ajout de l'utilisateur" },
+        status: 'OK',
       };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        "Erreur lors de l'ajout de l'utilisateur"
+      );
     }
   }
 
-  private extractTokenFromHeader(request: Request): string | undefined { const [type, token] = request.headers.authorization?.split(' ') ?? []; return type === 'Bearer' ? token : undefined; }
+  @Get('users/me')
+  async getCurrentUser(@Req() request: Request) {
+    try {
+      const { uid, email } = await this.authService.verifyToken(request);
+
+      const userDoc = (
+        await this.fa.firestore
+          .collection('Users')
+          .where('uid', '==', uid)
+          .limit(1)
+          .get()
+      ).docs[0];
+
+      if (!userDoc) {
+        throw new NotFoundException('Utilisateur non trouvé');
+      }
+
+      const userData = userDoc.data();
+
+      return {
+        uid,
+        email,
+        username: userData.username,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Erreur serveur');
+    }
+  }
 }
