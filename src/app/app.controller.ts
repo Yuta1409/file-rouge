@@ -114,4 +114,34 @@ export class AppController {
       throw new InternalServerErrorException('Erreur serveur');
     }
   }
+
+  @Get('quiz')
+  async getUserQuizzes(@Req() request: Request) {
+    try {
+      // Vérification de l'authentification
+      const { uid } = await this.authService.verifyToken(request);
+      // Récupération des quiz de l'utilisateur
+      const quizzesSnapshot = await this.fa.firestore
+        .collection('Quizz')
+        .where('userId', '==', uid)
+        .get();
+
+      const quizzes = quizzesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        title: doc.data().title
+      }));
+
+      return {
+        status: 200,
+        data: quizzes
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        'Erreur lors de la récupération des quiz'
+      );
+    }
+  }
 }
